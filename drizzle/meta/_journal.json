@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1788339827467,
+      "tag": "0000_organic_namor",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788340241720,
+      "tag": "0001_violet_blockbuster",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788340930658,
+      "tag": "0002_futuristic_khan",
+      "breakpoints": true
+    }
+  ]
+}
