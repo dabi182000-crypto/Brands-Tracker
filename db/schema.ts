@@ -8,6 +8,7 @@ export const brands = sqliteTable(
     name: text("name").notNull(),
     employee: text("employee").notNull().default(""),
     season: text("season").notNull().default(""),
+    assetStatus: text("asset_status").notNull().default("Not requested"),
     assignee: text("assignee").notNull().default("Specialist 1"),
     status: text("status").notNull().default("Starting"),
     progress: integer("progress").notNull().default(0),

@@ -1,0 +1,1 @@
+ALTER TABLE `brands` ADD `asset_status` text DEFAULT 'Not requested' NOT NULL;

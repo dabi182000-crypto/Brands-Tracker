@@ -22,6 +22,13 @@
       "when": 1788340930658,
       "tag": "0002_futuristic_khan",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788413473458,
+      "tag": "0003_melted_arclight",
+      "breakpoints": true
     }
   ]
 }
