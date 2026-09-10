@@ -1,7 +1,15 @@
 import { env } from "cloudflare:workers";
 
 const STATUSES = ["Starting", "In progress", "Done", "Uploaded"] as const;
-const ASSET_STATUSES = ["Not requested", "Request sent", "Assets received", "Partly received"] as const;
+const ASSET_STATUSES = [
+  "Not requested",
+  "Request sent",
+  "1st Reminder",
+  "2nd Reminder",
+  "Last Reminder",
+  "Partly received",
+  "Assets received",
+] as const;
 const SEASON_PHASES = ["Pre", "Main"] as const;
 
 type Status = (typeof STATUSES)[number];
