@@ -2,15 +2,18 @@ import { env } from "cloudflare:workers";
 
 const STATUSES = ["Starting", "In progress", "Done", "Uploaded"] as const;
 const ASSET_STATUSES = ["Not requested", "Request sent", "Assets received", "Partly received"] as const;
+const SEASON_PHASES = ["Pre", "Main"] as const;
 
 type Status = (typeof STATUSES)[number];
 type AssetStatus = (typeof ASSET_STATUSES)[number];
+type SeasonPhase = (typeof SEASON_PHASES)[number];
 
 type BrandRow = {
   id: number;
   name: string;
   employee: string;
   season: string;
+  season_phase: SeasonPhase;
   asset_status: AssetStatus;
   status: Status;
   progress: number;
@@ -27,12 +30,17 @@ function isAssetStatus(value: unknown): value is AssetStatus {
   return typeof value === "string" && ASSET_STATUSES.includes(value as AssetStatus);
 }
 
+function isSeasonPhase(value: unknown): value is SeasonPhase {
+  return typeof value === "string" && SEASON_PHASES.includes(value as SeasonPhase);
+}
+
 function toBrand(row: BrandRow) {
   return {
     id: row.id,
     name: row.name,
     employee: row.employee,
     season: row.season,
+    seasonPhase: row.season_phase,
     assetStatus: row.asset_status,
     status: row.status,
     progress: row.progress,
@@ -57,12 +65,14 @@ export async function PATCH(
       status?: unknown;
       employee?: unknown;
       season?: unknown;
+      seasonPhase?: unknown;
       assetStatus?: unknown;
       progress?: unknown;
       notes?: unknown;
     };
     const employee = typeof payload.employee === "string" ? payload.employee.trim() : "";
     const season = typeof payload.season === "string" ? payload.season.trim() : "";
+    const seasonPhase = payload.seasonPhase;
     const assetStatus = payload.assetStatus === undefined ? null : payload.assetStatus;
     const notes = typeof payload.notes === "string" ? payload.notes.trim() : "";
     const progress = typeof payload.progress === "number" ? payload.progress : Number.NaN;
@@ -70,6 +80,7 @@ export async function PATCH(
       !isStatus(payload.status) ||
       !employee ||
       !season ||
+      !isSeasonPhase(seasonPhase) ||
       (assetStatus !== null && !isAssetStatus(assetStatus)) ||
       employee.length > 80 ||
       season.length > 30 ||
@@ -83,11 +94,11 @@ export async function PATCH(
 
     const brand = await env.DB.prepare(
       `UPDATE brands
-       SET employee = ?, season = ?, asset_status = COALESCE(?, asset_status), status = ?, progress = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+       SET employee = ?, season = ?, season_phase = ?, asset_status = COALESCE(?, asset_status), status = ?, progress = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?
-       RETURNING id, name, employee, season, asset_status, status, progress, notes, created_at, updated_at`,
+       RETURNING id, name, employee, season, season_phase, asset_status, status, progress, notes, created_at, updated_at`,
     )
-      .bind(employee, season, assetStatus, payload.status, progress, notes, id)
+      .bind(employee, season, seasonPhase, assetStatus, payload.status, progress, notes, id)
       .first<BrandRow>();
 
     if (!brand) {
