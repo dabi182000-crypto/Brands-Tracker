@@ -35,19 +35,13 @@ import {
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 
 const stages = ["Starting", "In progress", "Done", "Uploaded"] as const;
-const assetStatuses = [
-  "Not requested",
-  "Request sent",
-  "1st Reminder",
-  "2nd Reminder",
-  "Last Reminder",
-  "Partly received",
-  "Assets received",
-] as const;
+const assetStatuses = ["Not requested", "Request sent", "Partly received", "Assets received"] as const;
+const reminderStatuses = ["No reminder", "1st Reminder", "2nd Reminder", "Last Reminder"] as const;
 const seasonPhases = ["Pre", "Main"] as const;
 
 type Stage = (typeof stages)[number];
 type AssetStatus = (typeof assetStatuses)[number];
+type ReminderStatus = (typeof reminderStatuses)[number];
 type SeasonPhase = (typeof seasonPhases)[number];
 
 type Brand = {
@@ -57,6 +51,7 @@ type Brand = {
   season: string;
   seasonPhase: SeasonPhase;
   assetStatus: AssetStatus;
+  reminderStatus: ReminderStatus;
   status: Stage;
   progress: number;
   notes: string;
@@ -64,7 +59,7 @@ type Brand = {
   updatedAt: string;
 };
 
-type BrandDraft = Pick<Brand, "employee" | "season" | "seasonPhase" | "assetStatus" | "status" | "progress" | "notes">;
+type BrandDraft = Pick<Brand, "employee" | "season" | "seasonPhase" | "assetStatus" | "reminderStatus" | "status" | "progress" | "notes">;
 
 function draftFromBrand(brand: Brand): BrandDraft {
   return {
@@ -72,6 +67,7 @@ function draftFromBrand(brand: Brand): BrandDraft {
     season: brand.season,
     seasonPhase: brand.seasonPhase,
     assetStatus: brand.assetStatus,
+    reminderStatus: brand.reminderStatus,
     status: brand.status,
     progress: brand.progress,
     notes: brand.notes,
@@ -110,11 +106,8 @@ const stageOrder: Record<Stage, number> = {
 const assetStatusOrder: Record<AssetStatus, number> = {
   "Not requested": 0,
   "Request sent": 1,
-  "1st Reminder": 2,
-  "2nd Reminder": 3,
-  "Last Reminder": 4,
-  "Partly received": 5,
-  "Assets received": 6,
+  "Partly received": 2,
+  "Assets received": 3,
 };
 
 type BrandSort =
@@ -245,6 +238,7 @@ export default function Home() {
           season,
           seasonPhase,
           assetStatus: "Not requested",
+          reminderStatus: "No reminder",
           status: "Starting",
           progress: 0,
           notes: "",
@@ -310,6 +304,7 @@ export default function Home() {
             season: draft.season,
             seasonPhase: draft.seasonPhase,
             assetStatus: draft.assetStatus,
+            reminderStatus: draft.reminderStatus,
             progress: draft.progress,
             notes: draft.notes,
           }),
@@ -361,13 +356,14 @@ export default function Home() {
 
     const escapeCsv = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
     const rows = [
-      ["Brand", "Employee", "Season", "Season type", "Asset status", "Stage", "Progress", "Notes", "Last update"],
+      ["Brand", "Employee", "Season", "Season type", "Asset status", "Reminder", "Stage", "Progress", "Notes", "Last update"],
       ...brands.map((brand) => [
         brand.name,
         brand.employee,
         brand.season,
         brand.seasonPhase,
         brand.assetStatus,
+        brand.reminderStatus,
         brand.status,
         `${brand.progress}%`,
         brand.notes,
@@ -515,18 +511,19 @@ export default function Home() {
                 <TableHead className="h-9 min-w-32 px-2 pl-4 text-xs">Brand</TableHead>
                 <TableHead className="h-9 min-w-44 px-2 text-xs">Season</TableHead>
                 <TableHead className="h-9 min-w-32 px-2 text-xs">Assets</TableHead>
+                <TableHead className="h-9 min-w-32 px-2 text-xs">Reminder</TableHead>
                 <TableHead className="h-9 min-w-28 px-2 text-xs">Stage</TableHead>
                 <TableHead className="h-9 min-w-36 px-2 text-xs">Progress</TableHead>
                 <TableHead className="h-9 min-w-44 px-2 text-xs">Notes</TableHead>
                 <TableHead className="h-9 min-w-22 px-2 text-xs">Last update</TableHead>
-                <TableHead className="h-9 px-2 pr-4 text-right text-xs">Remove</TableHead>
+                <TableHead className="h-9 w-10 px-2 pr-4 text-right text-xs"><span className="sr-only">Remove</span></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={8} className="h-36 text-center text-sm text-muted-foreground"><LoaderCircle className="mx-auto mb-2 size-5 animate-spin" aria-hidden="true" />Loading tracker…</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="h-36 text-center text-sm text-muted-foreground"><LoaderCircle className="mx-auto mb-2 size-5 animate-spin" aria-hidden="true" />Loading tracker…</TableCell></TableRow>
               ) : visibleBrands.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="h-40 text-center"><CheckCircle2 className="mx-auto mb-2 size-6 text-primary" aria-hidden="true" /><p className="text-sm font-medium">{brands.length === 0 ? "No brands added yet" : "No matching brands"}</p><p className="mt-1 text-xs text-muted-foreground">{brands.length === 0 ? "Add the first brand above to start tracking." : "Try another brand name."}</p></TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="h-40 text-center"><CheckCircle2 className="mx-auto mb-2 size-6 text-primary" aria-hidden="true" /><p className="text-sm font-medium">{brands.length === 0 ? "No brands added yet" : "No matching brands"}</p><p className="mt-1 text-xs text-muted-foreground">{brands.length === 0 ? "Add the first brand above to start tracking." : "Try another brand name."}</p></TableCell></TableRow>
               ) : visibleBrands.map((brand) => {
                 const draft = getDraft(brand);
                 const stage = stageInfo[draft.status];
@@ -565,6 +562,12 @@ export default function Home() {
                       <Select value={draft.assetStatus} onValueChange={(value) => setBrandDraft(brand, { assetStatus: value as AssetStatus })} disabled={savingAll || isRemoving}>
                         <SelectTrigger size="sm" className="h-7 min-w-32 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>{assetStatuses.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell className="px-2 py-2">
+                      <Select value={draft.reminderStatus} onValueChange={(value) => setBrandDraft(brand, { reminderStatus: value as ReminderStatus })} disabled={savingAll || isRemoving}>
+                        <SelectTrigger size="sm" className="h-7 min-w-32 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>{reminderStatuses.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
                       </Select>
                     </TableCell>
                     <TableCell className="px-2 py-2">
@@ -627,9 +630,8 @@ export default function Home() {
                     <TableCell className="px-2 py-2 pr-4 text-right">
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={savingAll || isRemoving}>
+                          <Button variant="ghost" size="icon-xs" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={savingAll || isRemoving} aria-label={`Remove ${brand.name}`} title={`Remove ${brand.name}`}>
                             {isRemoving ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : <Trash2 className="size-3.5" aria-hidden="true" />}
-                            Remove
                           </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent size="sm">
