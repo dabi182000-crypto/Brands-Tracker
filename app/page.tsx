@@ -36,15 +36,18 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 
 const stages = ["Starting", "In progress", "Done", "Uploaded"] as const;
 const assetStatuses = ["Not requested", "Request sent", "Assets received", "Partly received"] as const;
+const seasonPhases = ["Pre", "Main"] as const;
 
 type Stage = (typeof stages)[number];
 type AssetStatus = (typeof assetStatuses)[number];
+type SeasonPhase = (typeof seasonPhases)[number];
 
 type Brand = {
   id: number;
   name: string;
   employee: string;
   season: string;
+  seasonPhase: SeasonPhase;
   assetStatus: AssetStatus;
   status: Stage;
   progress: number;
@@ -53,12 +56,13 @@ type Brand = {
   updatedAt: string;
 };
 
-type BrandDraft = Pick<Brand, "employee" | "season" | "assetStatus" | "status" | "progress" | "notes">;
+type BrandDraft = Pick<Brand, "employee" | "season" | "seasonPhase" | "assetStatus" | "status" | "progress" | "notes">;
 
 function draftFromBrand(brand: Brand): BrandDraft {
   return {
     employee: brand.employee,
     season: brand.season,
+    seasonPhase: brand.seasonPhase,
     assetStatus: brand.assetStatus,
     status: brand.status,
     progress: brand.progress,
@@ -128,6 +132,7 @@ export default function Home() {
   const [brandName, setBrandName] = useState("");
   const [employeeName, setEmployeeName] = useState("");
   const [season, setSeason] = useState("");
+  const [seasonPhase, setSeasonPhase] = useState<SeasonPhase>("Main");
   const [searchDraft, setSearchDraft] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [brandSort, setBrandSort] = useState<BrandSort>("recent");
@@ -135,7 +140,7 @@ export default function Home() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [drafts, setDrafts] = useState<Record<number, BrandDraft>>({});
   const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState<number | null>(null);
+  const [savingAll, setSavingAll] = useState(false);
   const [removingId, setRemovingId] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState("");
@@ -227,6 +232,7 @@ export default function Home() {
           name: brandName,
           employee: employeeName,
           season,
+          seasonPhase,
           assetStatus: "Not requested",
           status: "Starting",
           progress: 0,
@@ -239,6 +245,7 @@ export default function Home() {
       setBrandName("");
       setEmployeeName("");
       setSeason("");
+      setSeasonPhase("Main");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not add the brand.");
     } finally {
@@ -257,44 +264,61 @@ export default function Home() {
     }));
   }
 
-  async function saveBrand(brand: Brand) {
-    const draft = getDraft(brand);
-    const employee = draft.employee.trim();
-    const updatedSeason = draft.season.trim();
-    const notes = draft.notes.trim();
+  async function saveAllBrands() {
+    const changedBrands = brands.filter((brand) => drafts[brand.id]);
+    if (changedBrands.length === 0) return;
 
-    if (!employee || !updatedSeason || !Number.isInteger(draft.progress) || draft.progress < 0 || draft.progress > 100) {
+    const updates = changedBrands.map((brand) => {
+      const draft = getDraft(brand);
+      return {
+        brand,
+        draft: {
+          ...draft,
+          employee: draft.employee.trim(),
+          season: draft.season.trim(),
+          notes: draft.notes.trim(),
+        },
+      };
+    });
+
+    if (updates.some(({ draft }) => !draft.employee || !draft.season || !Number.isInteger(draft.progress) || draft.progress < 0 || draft.progress > 100)) {
       setMessage("Enter an employee, season, and a progress value from 0% to 100% before saving.");
       return;
     }
 
-    setSavingId(brand.id);
+    setSavingAll(true);
     setMessage("");
     try {
-      const response = await fetch(`/api/brands/${brand.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: draft.status,
-          employee,
-          season: updatedSeason,
-          assetStatus: draft.assetStatus,
-          progress: draft.progress,
-          notes,
-        }),
-      });
-      const data = (await response.json()) as { brand?: Brand; error?: string };
-      if (!response.ok || !data.brand) throw new Error(data.error ?? "Could not save this update.");
-      setBrands((current) => current.map((item) => (item.id === brand.id ? data.brand! : item)));
+      const savedBrands = await Promise.all(updates.map(async ({ brand, draft }) => {
+        const response = await fetch(`/api/brands/${brand.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: draft.status,
+            employee: draft.employee,
+            season: draft.season,
+            seasonPhase: draft.seasonPhase,
+            assetStatus: draft.assetStatus,
+            progress: draft.progress,
+            notes: draft.notes,
+          }),
+        });
+        const data = (await response.json()) as { brand?: Brand; error?: string };
+        if (!response.ok || !data.brand) throw new Error(data.error ?? `Could not save ${brand.name}.`);
+        return data.brand;
+      }));
+
+      const savedById = new Map(savedBrands.map((brand) => [brand.id, brand]));
+      setBrands((current) => current.map((brand) => savedById.get(brand.id) ?? brand));
       setDrafts((current) => {
         const next = { ...current };
-        delete next[brand.id];
+        changedBrands.forEach((brand) => delete next[brand.id]);
         return next;
       });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not save this update.");
+      setMessage(error instanceof Error ? error.message : "Could not save all changes.");
     } finally {
-      setSavingId(null);
+      setSavingAll(false);
     }
   }
 
@@ -326,11 +350,12 @@ export default function Home() {
 
     const escapeCsv = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
     const rows = [
-      ["Brand", "Employee", "Season", "Asset status", "Stage", "Progress", "Notes", "Last update"],
+      ["Brand", "Employee", "Season", "Season type", "Asset status", "Stage", "Progress", "Notes", "Last update"],
       ...brands.map((brand) => [
         brand.name,
         brand.employee,
         brand.season,
+        brand.seasonPhase,
         brand.assetStatus,
         brand.status,
         `${brand.progress}%`,
@@ -354,7 +379,7 @@ export default function Home() {
           <div>
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-primary">
               <Save className="size-4" aria-hidden="true" />
-              Save changes manually
+              One button saves all changes
             </div>
             <h1 className="text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Brand Upload Tracker</h1>
             <p className="mt-2 text-base text-muted-foreground">Track every brand upload in one simple view.</p>
@@ -377,7 +402,7 @@ export default function Home() {
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-[0_18px_45px_-35px_rgba(17,47,90,0.55)]">
-          <form onSubmit={addBrand} className="grid gap-3 border-b border-border bg-secondary/55 p-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_12rem_8rem_auto] xl:items-end sm:p-5">
+          <form onSubmit={addBrand} className="grid gap-3 border-b border-border bg-secondary/55 p-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_12rem_8rem_7rem_auto] xl:items-end sm:p-5">
             <label className="grid gap-1.5 text-sm font-medium">
               Brand name
               <Input value={brandName} onChange={(event) => setBrandName(event.target.value)} placeholder="e.g. Brioni" maxLength={100} disabled={adding} />
@@ -389,6 +414,13 @@ export default function Home() {
             <label className="grid gap-1.5 text-sm font-medium">
               Season
               <Input value={season} onChange={(event) => setSeason(event.target.value)} placeholder="e.g. AW26" maxLength={30} disabled={adding} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              Type
+              <Select value={seasonPhase} onValueChange={(value) => setSeasonPhase(value as SeasonPhase)} disabled={adding}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{seasonPhases.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+              </Select>
             </label>
             <Button type="submit" className="w-full sm:w-auto" disabled={adding}>
               {adding ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Plus aria-hidden="true" />}
@@ -457,6 +489,10 @@ export default function Home() {
                 <Download aria-hidden="true" />
                 Export CSV
               </Button>
+              <Button type="button" className="h-10 w-full self-end" onClick={() => void saveAllBrands()} disabled={savingAll || removingId !== null || Object.keys(drafts).length === 0}>
+                {savingAll ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Save aria-hidden="true" />}
+                {savingAll ? "Saving all…" : "Save all changes"}
+              </Button>
             </div>
           </div>
 
@@ -466,25 +502,23 @@ export default function Home() {
             <TableHeader className="bg-card">
               <TableRow className="hover:bg-card">
                 <TableHead className="h-9 min-w-32 px-2 pl-4 text-xs">Brand</TableHead>
-                <TableHead className="h-9 px-2 text-xs">Season</TableHead>
+                <TableHead className="h-9 min-w-44 px-2 text-xs">Season</TableHead>
                 <TableHead className="h-9 min-w-32 px-2 text-xs">Assets</TableHead>
                 <TableHead className="h-9 min-w-28 px-2 text-xs">Stage</TableHead>
                 <TableHead className="h-9 min-w-36 px-2 text-xs">Progress</TableHead>
                 <TableHead className="h-9 min-w-44 px-2 text-xs">Notes</TableHead>
                 <TableHead className="h-9 min-w-22 px-2 text-xs">Last update</TableHead>
-                <TableHead className="h-9 px-2 text-right text-xs">Save</TableHead>
                 <TableHead className="h-9 px-2 pr-4 text-right text-xs">Remove</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={9} className="h-36 text-center text-sm text-muted-foreground"><LoaderCircle className="mx-auto mb-2 size-5 animate-spin" aria-hidden="true" />Loading tracker…</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="h-36 text-center text-sm text-muted-foreground"><LoaderCircle className="mx-auto mb-2 size-5 animate-spin" aria-hidden="true" />Loading tracker…</TableCell></TableRow>
               ) : visibleBrands.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="h-40 text-center"><CheckCircle2 className="mx-auto mb-2 size-6 text-primary" aria-hidden="true" /><p className="text-sm font-medium">{brands.length === 0 ? "No brands added yet" : "No matching brands"}</p><p className="mt-1 text-xs text-muted-foreground">{brands.length === 0 ? "Add the first brand above to start tracking." : "Try another brand name."}</p></TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="h-40 text-center"><CheckCircle2 className="mx-auto mb-2 size-6 text-primary" aria-hidden="true" /><p className="text-sm font-medium">{brands.length === 0 ? "No brands added yet" : "No matching brands"}</p><p className="mt-1 text-xs text-muted-foreground">{brands.length === 0 ? "Add the first brand above to start tracking." : "Try another brand name."}</p></TableCell></TableRow>
               ) : visibleBrands.map((brand) => {
                 const draft = getDraft(brand);
                 const stage = stageInfo[draft.status];
-                const isSaving = savingId === brand.id;
                 const isRemoving = removingId === brand.id;
                 return (
                   <TableRow key={brand.id}>
@@ -495,23 +529,29 @@ export default function Home() {
                         <Input
                           aria-label={`Employee for ${brand.name}`}
                           value={draft.employee}
-                          disabled={isSaving || isRemoving}
+                          disabled={savingAll || isRemoving}
                           className="h-5 min-w-20 border-0 bg-transparent px-0 text-xs text-muted-foreground shadow-none focus-visible:ring-0"
                           onChange={(event) => setBrandDraft(brand, { employee: event.target.value })}
                         />
                       </div>
                     </TableCell>
                     <TableCell className="px-2 py-2">
-                      <Input
-                        aria-label={`Season for ${brand.name}`}
-                        value={draft.season}
-                        disabled={isSaving || isRemoving}
-                        className="h-7 w-18 text-xs"
-                        onChange={(event) => setBrandDraft(brand, { season: event.target.value })}
-                      />
+                      <div className="flex min-w-44 items-center gap-1.5">
+                        <Input
+                          aria-label={`Season for ${brand.name}`}
+                          value={draft.season}
+                          disabled={savingAll || isRemoving}
+                          className="h-7 w-18 text-xs"
+                          onChange={(event) => setBrandDraft(brand, { season: event.target.value })}
+                        />
+                        <Select value={draft.seasonPhase} onValueChange={(value) => setBrandDraft(brand, { seasonPhase: value as SeasonPhase })} disabled={savingAll || isRemoving}>
+                          <SelectTrigger size="sm" className="h-7 min-w-20 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>{seasonPhases.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
                     </TableCell>
                     <TableCell className="px-2 py-2">
-                      <Select value={draft.assetStatus} onValueChange={(value) => setBrandDraft(brand, { assetStatus: value as AssetStatus })} disabled={isSaving || isRemoving}>
+                      <Select value={draft.assetStatus} onValueChange={(value) => setBrandDraft(brand, { assetStatus: value as AssetStatus })} disabled={savingAll || isRemoving}>
                         <SelectTrigger size="sm" className="h-7 min-w-32 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>{assetStatuses.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
                       </Select>
@@ -523,7 +563,7 @@ export default function Home() {
                           const status = value as Stage;
                           setBrandDraft(brand, { status, progress: stageProgress[status] });
                         }}
-                        disabled={isSaving || isRemoving}
+                        disabled={savingAll || isRemoving}
                       >
                         <SelectTrigger size="sm" className="h-7 min-w-28 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>{stages.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
@@ -540,7 +580,7 @@ export default function Home() {
                             max={100}
                             step={1}
                             value={draft.progress}
-                            disabled={isSaving || isRemoving}
+                            disabled={savingAll || isRemoving}
                             className="h-7 w-12 px-1.5 text-right text-xs font-semibold tabular-nums"
                             onChange={(event) => setBrandDraft(brand, { progress: Number(event.target.value) })}
                           />
@@ -555,7 +595,7 @@ export default function Home() {
                           value={draft.notes}
                           placeholder="Add a note…"
                           maxLength={500}
-                          disabled={isSaving || isRemoving}
+                          disabled={savingAll || isRemoving}
                           className="h-7 min-h-7 min-w-36 w-36 resize-none py-1 text-xs"
                           onChange={(event) => setBrandDraft(brand, { notes: event.target.value })}
                         />
@@ -573,16 +613,10 @@ export default function Home() {
                       </div>
                     </TableCell>
                     <TableCell className="whitespace-nowrap px-2 py-2 text-xs text-muted-foreground">{formatUpdated(brand.updatedAt)}</TableCell>
-                    <TableCell className="px-2 py-2 text-right">
-                      <Button type="button" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => void saveBrand(brand)} disabled={isSaving || isRemoving}>
-                        {isSaving ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : <Save className="size-3.5" aria-hidden="true" />}
-                        {isSaving ? "Saving…" : "Save"}
-                      </Button>
-                    </TableCell>
                     <TableCell className="px-2 py-2 pr-4 text-right">
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={isSaving || isRemoving}>
+                          <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={savingAll || isRemoving}>
                             {isRemoving ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : <Trash2 className="size-3.5" aria-hidden="true" />}
                             Remove
                           </Button>
@@ -605,7 +639,7 @@ export default function Home() {
             </TableBody>
           </Table>
         </section>
-        <p className="mt-4 text-sm text-muted-foreground">Use Save after changing a brand. You can still export the full tracker as a CSV file.</p>
+        <p className="mt-4 text-sm text-muted-foreground">Use Save all changes after editing any brands. You can still export the full tracker as a CSV file.</p>
       </div>
     </main>
   );
