@@ -1,19 +1,13 @@
 import { env } from "cloudflare:workers";
 
 const STATUSES = ["Starting", "In progress", "Done", "Uploaded"] as const;
-const ASSET_STATUSES = [
-  "Not requested",
-  "Request sent",
-  "1st Reminder",
-  "2nd Reminder",
-  "Last Reminder",
-  "Partly received",
-  "Assets received",
-] as const;
+const ASSET_STATUSES = ["Not requested", "Request sent", "Partly received", "Assets received"] as const;
+const REMINDER_STATUSES = ["No reminder", "1st Reminder", "2nd Reminder", "Last Reminder"] as const;
 const SEASON_PHASES = ["Pre", "Main"] as const;
 
 type Status = (typeof STATUSES)[number];
 type AssetStatus = (typeof ASSET_STATUSES)[number];
+type ReminderStatus = (typeof REMINDER_STATUSES)[number];
 type SeasonPhase = (typeof SEASON_PHASES)[number];
 
 type BrandRow = {
@@ -22,7 +16,8 @@ type BrandRow = {
   employee: string;
   season: string;
   season_phase: SeasonPhase;
-  asset_status: AssetStatus;
+  asset_status: string;
+  reminder_status: string;
   status: Status;
   progress: number;
   notes: string;
@@ -38,18 +33,28 @@ function isAssetStatus(value: unknown): value is AssetStatus {
   return typeof value === "string" && ASSET_STATUSES.includes(value as AssetStatus);
 }
 
+function isReminderStatus(value: unknown): value is ReminderStatus {
+  return typeof value === "string" && REMINDER_STATUSES.includes(value as ReminderStatus);
+}
+
 function isSeasonPhase(value: unknown): value is SeasonPhase {
   return typeof value === "string" && SEASON_PHASES.includes(value as SeasonPhase);
 }
 
 function toBrand(row: BrandRow) {
+  const legacyReminder = isReminderStatus(row.asset_status) && row.asset_status !== "No reminder"
+    ? row.asset_status
+    : null;
   return {
     id: row.id,
     name: row.name,
     employee: row.employee,
     season: row.season,
     seasonPhase: row.season_phase,
-    assetStatus: row.asset_status,
+    assetStatus: isAssetStatus(row.asset_status) ? row.asset_status : "Request sent",
+    reminderStatus: isReminderStatus(row.reminder_status) && row.reminder_status !== "No reminder"
+      ? row.reminder_status
+      : legacyReminder ?? "No reminder",
     status: row.status,
     progress: row.progress,
     notes: row.notes,
@@ -75,6 +80,7 @@ export async function PATCH(
       season?: unknown;
       seasonPhase?: unknown;
       assetStatus?: unknown;
+      reminderStatus?: unknown;
       progress?: unknown;
       notes?: unknown;
     };
@@ -82,6 +88,7 @@ export async function PATCH(
     const season = typeof payload.season === "string" ? payload.season.trim() : "";
     const seasonPhase = payload.seasonPhase;
     const assetStatus = payload.assetStatus === undefined ? null : payload.assetStatus;
+    const reminderStatus = payload.reminderStatus;
     const notes = typeof payload.notes === "string" ? payload.notes.trim() : "";
     const progress = typeof payload.progress === "number" ? payload.progress : Number.NaN;
     if (
@@ -90,6 +97,7 @@ export async function PATCH(
       !season ||
       !isSeasonPhase(seasonPhase) ||
       (assetStatus !== null && !isAssetStatus(assetStatus)) ||
+      !isReminderStatus(reminderStatus) ||
       employee.length > 80 ||
       season.length > 30 ||
       !Number.isInteger(progress) ||
@@ -102,11 +110,11 @@ export async function PATCH(
 
     const brand = await env.DB.prepare(
       `UPDATE brands
-       SET employee = ?, season = ?, season_phase = ?, asset_status = COALESCE(?, asset_status), status = ?, progress = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+       SET employee = ?, season = ?, season_phase = ?, asset_status = COALESCE(?, asset_status), reminder_status = ?, status = ?, progress = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?
-       RETURNING id, name, employee, season, season_phase, asset_status, status, progress, notes, created_at, updated_at`,
+       RETURNING id, name, employee, season, season_phase, asset_status, reminder_status, status, progress, notes, created_at, updated_at`,
     )
-      .bind(employee, season, seasonPhase, assetStatus, payload.status, progress, notes, id)
+      .bind(employee, season, seasonPhase, assetStatus, reminderStatus, payload.status, progress, notes, id)
       .first<BrandRow>();
 
     if (!brand) {
