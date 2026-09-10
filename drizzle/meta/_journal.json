@@ -36,6 +36,13 @@
       "when": 1789019008289,
       "tag": "0004_useful_menace",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1789019842769,
+      "tag": "0005_smiling_pride",
+      "breakpoints": true
     }
   ]
 }
