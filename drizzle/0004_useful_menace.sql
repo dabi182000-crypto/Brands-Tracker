@@ -1,0 +1,1 @@
+ALTER TABLE `brands` ADD `season_phase` text DEFAULT 'Main' NOT NULL;
