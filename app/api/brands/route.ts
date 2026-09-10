@@ -2,15 +2,18 @@ import { env } from "cloudflare:workers";
 
 const STATUSES = ["Starting", "In progress", "Done", "Uploaded"] as const;
 const ASSET_STATUSES = ["Not requested", "Request sent", "Assets received", "Partly received"] as const;
+const SEASON_PHASES = ["Pre", "Main"] as const;
 
 type Status = (typeof STATUSES)[number];
 type AssetStatus = (typeof ASSET_STATUSES)[number];
+type SeasonPhase = (typeof SEASON_PHASES)[number];
 
 type BrandRow = {
   id: number;
   name: string;
   employee: string;
   season: string;
+  season_phase: SeasonPhase;
   asset_status: AssetStatus;
   status: Status;
   progress: number;
@@ -27,12 +30,17 @@ function isAssetStatus(value: unknown): value is AssetStatus {
   return typeof value === "string" && ASSET_STATUSES.includes(value as AssetStatus);
 }
 
+function isSeasonPhase(value: unknown): value is SeasonPhase {
+  return typeof value === "string" && SEASON_PHASES.includes(value as SeasonPhase);
+}
+
 function toBrand(row: BrandRow) {
   return {
     id: row.id,
     name: row.name,
     employee: row.employee,
     season: row.season,
+    seasonPhase: row.season_phase,
     assetStatus: row.asset_status,
     status: row.status,
     progress: row.progress,
@@ -45,7 +53,7 @@ function toBrand(row: BrandRow) {
 export async function GET() {
   try {
     const result = await env.DB.prepare(
-      `SELECT id, name, employee, season, asset_status, status, progress, notes, created_at, updated_at
+      `SELECT id, name, employee, season, season_phase, asset_status, status, progress, notes, created_at, updated_at
        FROM brands
        ORDER BY updated_at DESC, id DESC`,
     ).all<BrandRow>();
@@ -66,6 +74,7 @@ export async function POST(request: Request) {
       name?: string;
       employee?: string;
       season?: string;
+      seasonPhase?: unknown;
       assetStatus?: unknown;
       status?: unknown;
       progress?: unknown;
@@ -74,6 +83,7 @@ export async function POST(request: Request) {
     const name = payload.name?.trim() ?? "";
     const employee = payload.employee?.trim() ?? "";
     const season = payload.season?.trim() ?? "";
+    const seasonPhase = payload.seasonPhase ?? "Main";
     const assetStatus = payload.assetStatus ?? "Not requested";
     const status = payload.status ?? "Starting";
     const progress = typeof payload.progress === "number" ? payload.progress : 0;
@@ -94,16 +104,16 @@ export async function POST(request: Request) {
     if (employee.length > 80 || season.length > 30) {
       return Response.json({ error: "Employee name or season is too long." }, { status: 400 });
     }
-    if (!isAssetStatus(assetStatus) || !isStatus(status) || !Number.isInteger(progress) || progress < 0 || progress > 100 || notes.length > 500) {
+    if (!isSeasonPhase(seasonPhase) || !isAssetStatus(assetStatus) || !isStatus(status) || !Number.isInteger(progress) || progress < 0 || progress > 100 || notes.length > 500) {
       return Response.json({ error: "Invalid brand details." }, { status: 400 });
     }
 
     const brand = await env.DB.prepare(
-      `INSERT INTO brands (name, employee, season, asset_status, status, progress, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       RETURNING id, name, employee, season, asset_status, status, progress, notes, created_at, updated_at`,
+      `INSERT INTO brands (name, employee, season, season_phase, asset_status, status, progress, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       RETURNING id, name, employee, season, season_phase, asset_status, status, progress, notes, created_at, updated_at`,
     )
-      .bind(name, employee, season, assetStatus, status, progress, notes)
+      .bind(name, employee, season, seasonPhase, assetStatus, status, progress, notes)
       .first<BrandRow>();
 
     if (!brand) {
