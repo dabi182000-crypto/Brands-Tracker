@@ -1,0 +1,1 @@
+ALTER TABLE `brands` ADD `reminder_status` text DEFAULT 'No reminder' NOT NULL;
