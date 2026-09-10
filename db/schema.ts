@@ -10,6 +10,7 @@ export const brands = sqliteTable(
     season: text("season").notNull().default(""),
     seasonPhase: text("season_phase").notNull().default("Main"),
     assetStatus: text("asset_status").notNull().default("Not requested"),
+    reminderStatus: text("reminder_status").notNull().default("No reminder"),
     assignee: text("assignee").notNull().default("Specialist 1"),
     status: text("status").notNull().default("Starting"),
     progress: integer("progress").notNull().default(0),
