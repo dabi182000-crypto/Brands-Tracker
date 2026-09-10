@@ -1,19 +1,13 @@
 import { env } from "cloudflare:workers";
 
 const STATUSES = ["Starting", "In progress", "Done", "Uploaded"] as const;
-const ASSET_STATUSES = [
-  "Not requested",
-  "Request sent",
-  "1st Reminder",
-  "2nd Reminder",
-  "Last Reminder",
-  "Partly received",
-  "Assets received",
-] as const;
+const ASSET_STATUSES = ["Not requested", "Request sent", "Partly received", "Assets received"] as const;
+const REMINDER_STATUSES = ["No reminder", "1st Reminder", "2nd Reminder", "Last Reminder"] as const;
 const SEASON_PHASES = ["Pre", "Main"] as const;
 
 type Status = (typeof STATUSES)[number];
 type AssetStatus = (typeof ASSET_STATUSES)[number];
+type ReminderStatus = (typeof REMINDER_STATUSES)[number];
 type SeasonPhase = (typeof SEASON_PHASES)[number];
 
 type BrandRow = {
@@ -22,7 +16,8 @@ type BrandRow = {
   employee: string;
   season: string;
   season_phase: SeasonPhase;
-  asset_status: AssetStatus;
+  asset_status: string;
+  reminder_status: string;
   status: Status;
   progress: number;
   notes: string;
@@ -38,18 +33,28 @@ function isAssetStatus(value: unknown): value is AssetStatus {
   return typeof value === "string" && ASSET_STATUSES.includes(value as AssetStatus);
 }
 
+function isReminderStatus(value: unknown): value is ReminderStatus {
+  return typeof value === "string" && REMINDER_STATUSES.includes(value as ReminderStatus);
+}
+
 function isSeasonPhase(value: unknown): value is SeasonPhase {
   return typeof value === "string" && SEASON_PHASES.includes(value as SeasonPhase);
 }
 
 function toBrand(row: BrandRow) {
+  const legacyReminder = isReminderStatus(row.asset_status) && row.asset_status !== "No reminder"
+    ? row.asset_status
+    : null;
   return {
     id: row.id,
     name: row.name,
     employee: row.employee,
     season: row.season,
     seasonPhase: row.season_phase,
-    assetStatus: row.asset_status,
+    assetStatus: isAssetStatus(row.asset_status) ? row.asset_status : "Request sent",
+    reminderStatus: isReminderStatus(row.reminder_status) && row.reminder_status !== "No reminder"
+      ? row.reminder_status
+      : legacyReminder ?? "No reminder",
     status: row.status,
     progress: row.progress,
     notes: row.notes,
@@ -61,7 +66,7 @@ function toBrand(row: BrandRow) {
 export async function GET() {
   try {
     const result = await env.DB.prepare(
-      `SELECT id, name, employee, season, season_phase, asset_status, status, progress, notes, created_at, updated_at
+      `SELECT id, name, employee, season, season_phase, asset_status, reminder_status, status, progress, notes, created_at, updated_at
        FROM brands
        ORDER BY updated_at DESC, id DESC`,
     ).all<BrandRow>();
@@ -84,6 +89,7 @@ export async function POST(request: Request) {
       season?: string;
       seasonPhase?: unknown;
       assetStatus?: unknown;
+      reminderStatus?: unknown;
       status?: unknown;
       progress?: unknown;
       notes?: string;
@@ -93,6 +99,7 @@ export async function POST(request: Request) {
     const season = payload.season?.trim() ?? "";
     const seasonPhase = payload.seasonPhase ?? "Main";
     const assetStatus = payload.assetStatus ?? "Not requested";
+    const reminderStatus = payload.reminderStatus ?? "No reminder";
     const status = payload.status ?? "Starting";
     const progress = typeof payload.progress === "number" ? payload.progress : 0;
     const notes = payload.notes?.trim() ?? "";
@@ -112,16 +119,16 @@ export async function POST(request: Request) {
     if (employee.length > 80 || season.length > 30) {
       return Response.json({ error: "Employee name or season is too long." }, { status: 400 });
     }
-    if (!isSeasonPhase(seasonPhase) || !isAssetStatus(assetStatus) || !isStatus(status) || !Number.isInteger(progress) || progress < 0 || progress > 100 || notes.length > 500) {
+    if (!isSeasonPhase(seasonPhase) || !isAssetStatus(assetStatus) || !isReminderStatus(reminderStatus) || !isStatus(status) || !Number.isInteger(progress) || progress < 0 || progress > 100 || notes.length > 500) {
       return Response.json({ error: "Invalid brand details." }, { status: 400 });
     }
 
     const brand = await env.DB.prepare(
-      `INSERT INTO brands (name, employee, season, season_phase, asset_status, status, progress, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       RETURNING id, name, employee, season, season_phase, asset_status, status, progress, notes, created_at, updated_at`,
+      `INSERT INTO brands (name, employee, season, season_phase, asset_status, reminder_status, status, progress, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       RETURNING id, name, employee, season, season_phase, asset_status, reminder_status, status, progress, notes, created_at, updated_at`,
     )
-      .bind(name, employee, season, seasonPhase, assetStatus, status, progress, notes)
+      .bind(name, employee, season, seasonPhase, assetStatus, reminderStatus, status, progress, notes)
       .first<BrandRow>();
 
     if (!brand) {
