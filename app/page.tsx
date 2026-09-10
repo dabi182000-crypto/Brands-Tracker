@@ -35,7 +35,15 @@ import {
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 
 const stages = ["Starting", "In progress", "Done", "Uploaded"] as const;
-const assetStatuses = ["Not requested", "Request sent", "Assets received", "Partly received"] as const;
+const assetStatuses = [
+  "Not requested",
+  "Request sent",
+  "1st Reminder",
+  "2nd Reminder",
+  "Last Reminder",
+  "Partly received",
+  "Assets received",
+] as const;
 const seasonPhases = ["Pre", "Main"] as const;
 
 type Stage = (typeof stages)[number];
@@ -102,8 +110,11 @@ const stageOrder: Record<Stage, number> = {
 const assetStatusOrder: Record<AssetStatus, number> = {
   "Not requested": 0,
   "Request sent": 1,
-  "Partly received": 2,
-  "Assets received": 3,
+  "1st Reminder": 2,
+  "2nd Reminder": 3,
+  "Last Reminder": 4,
+  "Partly received": 5,
+  "Assets received": 6,
 };
 
 type BrandSort =
